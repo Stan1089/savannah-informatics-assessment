@@ -50,6 +50,15 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(title="Clinic Booking API", version="1.0.0", lifespan=lifespan)
 
+@app.get("/")
+def home():
+    return {
+        "message": "Welcome to the Clinic Booking API",
+        "status": "running",
+        "health": "/health",
+        "documentation": "/docs"
+    }
+
 
 @app.get("/health")
 def health():
