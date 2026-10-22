@@ -1,43 +1,208 @@
+
 # Clinic Booking API
 
-A small REST API for booking 30-minute clinic appointments. The implementation uses FastAPI, SQLAlchemy, and PostgreSQL in production (SQLite by default for local development and tests).
+A REST API for managing clinic appointments, built with FastAPI, SQLAlchemy, and PostgreSQL in production. SQLite is used by default for local development and testing.
+
+The API supports doctor discovery, patient registration, appointment booking, availability checks, cancellation, rescheduling, and retrieval of upcoming patient appointments.
+
+**Live API:** https://savannah-informatics-assessment.onrender.com/
+
+**Interactive API documentation:** https://savannah-informatics-assessment.onrender.com/docs
+
+**Health check:** https://savannah-informatics-assessment.onrender.com/health
+
+## Table of Contents
+
+- [Features](#features)
+- [System Design](#system-design)
+- [Technology Stack](#technology-stack)
+- [API Endpoints](#api-endpoints)
+- [Appointment Rules](#appointment-rules)
+- [Example Requests](#example-requests)
+- [Run Locally](#run-locally)
+- [Testing](#testing)
+- [Configuration](#configuration)
+- [Deployment](#deployment)
+- [CI/CD Pipeline](#cicd-pipeline)
+- [Limitations and Trade-offs](#limitations-and-trade-offs)
+- [AI Usage Reflection](#ai-usage-reflection)
+
+## Features
+
+- Register patients with unique email addresses.
+- List available doctors.
+- Retrieve available appointment slots for a specified date.
+- Book 30-minute appointments.
+- Prevent conflicting bookings for the same doctor and start time.
+- Cancel appointments while retaining cancellation history.
+- Reschedule appointments while preserving the existing booking if the new slot is invalid.
+- Retrieve upcoming booked appointments for a patient.
+- Validate appointment timestamps and normalize them to UTC.
+- Automatically initialize the database and seed sample doctors.
+- Provide interactive API documentation through Swagger UI.
+- Run automated tests through GitHub Actions.
 
 ## System Design
 
-### Models
+### Data Models
 
-- `Doctor` has a name and IANA timezone. `WorkingHour` records one opening and closing interval per weekday, in the doctor's local time.
-- `Patient` has a name and unique email address.
-- `Appointment` links a doctor and patient to a UTC start time and a `booked` or `cancelled` status. Cancellation reason and appointment history are retained.
+**Doctor**
 
-### Components and decisions
+Represents a doctor with a name, timezone, and associated working hours.
 
-- The API validates working hours, 30-minute alignment, the one-hour booking cutoff, and appointment state in a booking service rather than duplicating those rules across routes.
-- Appointment timestamps must include an offset. They are normalized to UTC for storage and returned as UTC timestamps; working hours and availability dates use the doctor's timezone (`Africa/Nairobi` for the five seeded doctors).
-- A partial unique index on `(doctor_id, starts_at)` for `status = 'booked'` is the final protection against concurrent double booking. It also lets cancelled slots be booked again without discarding cancellation history. The database enforces this even if two requests pass the initial availability check at the same time.
-- Rescheduling updates the existing appointment in one transaction. If the target slot is invalid or already taken, the update fails and the original booking remains intact.
-- The app seeds five sample doctors, each working Monday to Friday, 09:00-17:00 East Africa Time. This is deliberately simple sample data; a real clinic would manage schedules and exceptions administratively.
-- SQLite keeps local setup lightweight. Production uses Render PostgreSQL; this avoids relying on an ephemeral filesystem for appointment data. Authentication, authorization, migrations, schedule exceptions, and patient privacy controls are outside this assessment's scope.
+**WorkingHour**
 
-### Trade-offs
+Defines a doctor's opening and closing times for a particular weekday. Working hours are interpreted in the doctor's local timezone.
 
-- Retaining cancelled appointment rows improves auditability, but requires queries and the partial index to distinguish active bookings.
-- A weekday opening-hours table is enough for the stated scenario, but does not represent holidays, breaks, one-off schedule changes, or multiple shifts in a day.
-- The one-hour cutoff is applied consistently to booking, rescheduling, and availability. This bonus behavior means patients will not see slots that are too soon to book.
+**Patient**
 
-## API
+Stores a patient's full name and unique email address.
 
-- `GET /health`
-- `GET /doctors`
-- `POST /patients`
-- `POST /appointments`
-- `GET /doctors/{id}/availability?date=YYYY-MM-DD`
-- `PATCH /appointments/{id}/cancel`
-- `PATCH /appointments/{id}/reschedule`
-- `GET /patients/{id}/appointments`
-- Interactive API docs: `/docs`
+**Appointment**
 
-Appointment examples use an explicit timezone offset:
+Associates a patient with a doctor and an appointment start time. Appointments have a status of `booked` or `cancelled`. Cancellation reasons are retained for record keeping.
+
+### Architecture and Components
+
+The application separates HTTP request handling, business logic, database access, and data validation.
+
+- **API layer:** FastAPI exposes REST endpoints and handles request validation, dependency injection, and HTTP responses.
+- **Business logic:** The booking service validates appointment slots, working hours, booking cutoffs, and rescheduling rules.
+- **Data access:** SQLAlchemy manages database models, queries, and transactions.
+- **Database:** SQLite supports local development and testing. PostgreSQL is used in the production deployment.
+- **Testing:** Pytest runs automated tests against the application.
+- **Deployment:** Render hosts the API, while GitHub Actions automates testing and triggers deployment.
+
+### Key Design Decisions
+
+**Timezones and timestamps**
+
+Appointment timestamps must include a timezone offset. The application normalizes appointment times to UTC for storage and API responses. Availability is calculated using the doctor's local timezone.
+
+The seeded doctors use the `Africa/Nairobi` timezone.
+
+**Double-booking prevention**
+
+The database uses a partial unique index on `(doctor_id, starts_at)` for appointments with `status = 'booked'`. This prevents two active appointments from occupying the same doctor's time slot, including when concurrent requests pass the initial availability check.
+
+Cancelled appointments do not occupy the slot, allowing it to be booked again while preserving the previous appointment record.
+
+**Transactional rescheduling**
+
+Rescheduling updates an existing appointment. If the target slot is invalid or unavailable, the operation fails and the original booking is retained.
+
+**Database initialization**
+
+On application startup, the database tables are initialized and five sample doctors are created if no doctors exist. Each sample doctor works Monday to Friday, 09:00–17:00 East Africa Time.
+
+## Technology Stack
+
+| Component | Technology |
+|---|---|
+| Programming language | Python |
+| API framework | FastAPI |
+| ASGI server | Uvicorn |
+| ORM | SQLAlchemy |
+| Production database | PostgreSQL |
+| Local and test database | SQLite |
+| Data validation | Pydantic |
+| Automated testing | Pytest |
+| CI/CD | GitHub Actions |
+| Hosting | Render |
+| Containerization | Docker |
+
+## API Endpoints
+
+The API exposes the following endpoints:
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/health` | Check application health |
+| GET | `/doctors` | List doctors |
+| POST | `/patients` | Register a patient |
+| POST | `/appointments` | Book an appointment |
+| GET | `/doctors/{doctor_id}/availability?date=YYYY-MM-DD` | Retrieve available appointment slots |
+| PATCH | `/appointments/{appointment_id}/cancel` | Cancel an appointment |
+| PATCH | `/appointments/{appointment_id}/reschedule` | Reschedule an appointment |
+| GET | `/patients/{patient_id}/appointments` | Retrieve upcoming booked appointments |
+
+Interactive documentation is available at `/docs`, and the OpenAPI schema is available at `/openapi.json`.
+
+## Appointment Rules
+
+The application enforces the following business rules:
+
+1. Appointments last 30 minutes.
+2. Appointment start times must align with 30-minute intervals.
+3. Appointments must fall within the doctor's working hours.
+4. A minimum one-hour booking cutoff applies to booking, rescheduling, and availability.
+5. Appointment timestamps must include an explicit timezone offset.
+6. Appointment times are normalized to UTC.
+7. A doctor cannot have two active appointments at the same start time.
+8. Patients cannot register multiple times with the same email address.
+9. Cancelled appointments retain their history and cancellation reason.
+10. Invalid booking and rescheduling requests are rejected without silently replacing an existing booking.
+
+## Example Requests
+
+The following examples use the deployed API. You can also run them through Swagger UI at `/docs`.
+
+### Check API health
+
+```http
+GET /health
+```
+
+Expected response:
+
+```json
+{
+  "status": "ok"
+}
+```
+
+### List doctors
+
+```http
+GET /doctors
+```
+
+Returns the available doctor records, including their IDs and timezones.
+
+### Register a patient
+
+```http
+POST /patients
+Content-Type: application/json
+```
+
+Example request:
+
+```json
+{
+  "full_name": "Jane Doe",
+  "email": "jane.doe@example.com"
+}
+```
+
+A successful request returns the created patient record. The returned patient ID is used when booking an appointment.
+
+### Check appointment availability
+
+```http
+GET /doctors/1/availability?date=2027-01-04
+```
+
+Returns the available appointment slots for doctor `1` on the requested date, subject to the doctor's working hours, existing bookings, and booking cutoff.
+
+### Book an appointment
+
+```http
+POST /appointments
+Content-Type: application/json
+```
+
+Example request:
 
 ```json
 {
@@ -47,46 +212,202 @@ Appointment examples use an explicit timezone offset:
 }
 ```
 
+Use valid doctor and patient IDs and a slot that satisfies the booking rules. The timestamp above uses the East Africa Time offset of `+03:00`.
+
+### Cancel an appointment
+
+```http
+PATCH /appointments/1/cancel
+Content-Type: application/json
+```
+
+Example request:
+
+```json
+{
+  "reason": "Patient requested cancellation"
+}
+```
+
+Use an existing appointment ID. The appointment is marked as cancelled, and its cancellation reason is retained.
+
+### Reschedule an appointment
+
+```http
+PATCH /appointments/1/reschedule
+Content-Type: application/json
+```
+
+Example request:
+
+```json
+{
+  "starts_at": "2027-01-04T11:00:00+03:00"
+}
+```
+
+The new start time must satisfy the appointment rules and be available for the doctor.
+
+### Retrieve a patient's upcoming appointments
+
+```http
+GET /patients/1/appointments
+```
+
+Returns the patient's upcoming appointments that remain booked.
+
+**Note:** The IDs and dates in these examples are illustrative. Use existing IDs and future dates appropriate to the API's booking rules when testing.
+
 ## Run Locally
 
-Requires Python 3.12 or newer.
+### Prerequisites
+
+- Python 3.12 or newer
+- Git
+- A terminal, such as the VS Code PowerShell terminal
+
+### 1. Clone the repository
+
+Replace the repository URL below if you use a different clone URL.
+
+```bash
+git clone https://github.com/Stan1089/savannah-informatics-assessment.git
+cd savannah-informatics-assessment
+```
+
+### 2. Create a virtual environment
+
+On Windows PowerShell:
 
 ```powershell
 py -3.12 -m venv .venv
 .venv\Scripts\Activate.ps1
-python -m pip install -r requirements.txt
-uvicorn clinic.main:app --reload
 ```
 
-The app creates `clinic.db` and seeds five sample doctors on startup. Create a patient with `POST /patients`, then book with `POST /appointments`. Run tests with `pytest -q`.
+If PowerShell blocks virtual-environment activation, use the appropriate Python executable directly or follow your organization's PowerShell execution policy guidance.
 
-Set `DATABASE_URL` to use a different database. For PostgreSQL, use a SQLAlchemy URL such as `postgresql+psycopg://user:password@host:5432/database`.
+### 3. Install dependencies
 
+```powershell
+python -m pip install -r requirements.txt
+```
 
-## Deployment and CI/CD
+### 4. Start the application
 
-### Live Deployment
+```powershell
+python -m uvicorn clinic.main:app --reload
+```
 
-The API is deployed on Render.
+The API should be available at:
 
-- **Base URL:** https://savannah-informatics-assessment.onrender.com/
-- **Interactive API documentation:** https://savannah-informatics-assessment.onrender.com/docs
+- Homepage: http://127.0.0.1:8000/
+- Interactive documentation: http://127.0.0.1:8000/docs
+- Health check: http://127.0.0.1:8000/health
+
+The application initializes the database and seeds sample doctors on startup.
+
+### 5. Stop the application
+
+Press `Ctrl+C` in the terminal.
+
+## Testing
+
+The project uses Pytest for automated testing.
+
+Install the project dependencies before running the tests, then execute:
+
+```powershell
+python -m pytest -v
+```
+
+Alternatively, run:
+
+```powershell
+pytest -q
+```
+
+The tests cover appointment booking behavior and relevant validation rules. The test suite has passed in the local development environment and through the configured GitHub Actions workflow.
+
+## Configuration
+
+The application supports database configuration through the `DATABASE_URL` environment variable.
+
+By default, local development uses SQLite.
+
+For PostgreSQL, configure a SQLAlchemy connection URL in the appropriate environment:
+
+```text
+postgresql+psycopg://user:password@host:5432/database
+```
+
+Replace the example credentials and host with your actual database configuration. Do not commit real credentials, passwords, or other secrets to source control.
+
+The Render deployment configuration is defined in `render.yaml`.
+
+## Deployment
+
+The application is deployed on Render.
+
+- **Production API:** https://savannah-informatics-assessment.onrender.com/
+- **Swagger documentation:** https://savannah-informatics-assessment.onrender.com/docs
 - **Health check:** https://savannah-informatics-assessment.onrender.com/health
 
-The health endpoint returns `{"status":"ok"}` when the application is running.
+The production environment uses PostgreSQL to avoid relying on an ephemeral local filesystem for persistent appointment data.
 
-### Continuous Integration and Deployment
+Render provides the hosted application URL after the web service is deployed. The service may take a short time to start when using a free hosting instance.
 
-The project uses GitHub Actions for automated testing and Render for deployment.
+## CI/CD Pipeline
 
-- **Pull requests:** GitHub Actions installs dependencies and runs the automated test suite.
-- **Pushes to `main`:** GitHub Actions runs the tests before proceeding to the deployment job.
-- **Deployment:** If the tests pass, the workflow triggers a Render deployment using the `RENDER_DEPLOY_HOOK_URL` repository secret.
-- **Workflow configuration:** `.github/workflows/ci-cd.yml` (verify the exact filename in the repository).
-- **Test command:** `pytest -q`
+The project uses GitHub Actions for continuous integration and continuous deployment.
 
-The Render deploy hook URL is stored as a GitHub Actions secret and is not committed to the repository.
+### Continuous Integration
 
-### Production Configuration
+The workflow runs on pull requests and pushes to the `main` branch.
 
-The application uses PostgreSQL in production and SQLite for local development and tests. The `render.yaml` file defines the Render deployment configuration.
+The test job:
+
+1. Checks out the repository.
+2. Sets up Python 3.12.
+3. Installs the dependencies in `requirements.txt`.
+4. Runs the automated test suite using `pytest -q`.
+
+### Continuous Deployment
+
+When code is pushed to `main`, the deployment job runs only after the test job succeeds.
+
+The workflow sends a deployment request to Render using the `RENDER_DEPLOY_HOOK_URL` GitHub Actions repository secret.
+
+The deploy hook URL is stored as a secret and must not be committed to the repository.
+
+### Workflow Configuration
+
+The GitHub Actions workflow is located under `.github/workflows/`.
+
+Verify the exact workflow filename in the repository before documenting its full path. The current project configuration uses the workflow file that defines the test and deployment jobs.
+
+### Deployment Verification
+
+After deployment, the following checks can be used to verify the service:
+
+- Open the API homepage.
+- Open Swagger UI and inspect the available endpoints.
+- Check the `/health` endpoint.
+- Review the latest GitHub Actions run and confirm both the `test` and `deploy` jobs pass.
+- Review the Render deployment logs if the service does not respond as expected.
+
+## Limitations and Trade-offs
+
+- The application uses five seeded doctors rather than an administrative doctor-management interface.
+- Working hours are defined by weekday and do not model holidays, breaks, exceptional closures, or multiple shifts.
+- Authentication and authorization are outside the scope of this assessment.
+- Database migration management is not included in the current implementation.
+- Patient privacy controls and production-grade access policies would need to be added before using the application with real patient information.
+- Cancelled appointments are retained for auditability, so queries must distinguish active and cancelled bookings.
+
+These trade-offs keep the implementation focused on the appointment-booking requirements while identifying areas for future improvement.
+
+## AI Usage Reflection
+
+AI tools were used as a development aid to explore implementation approaches, troubleshoot technical errors, and improve project documentation. Suggestions were reviewed and validated through local testing, deployed endpoint checks, and GitHub Actions results.
+
+This process reinforced the importance of understanding generated code, testing business rules, investigating deployment failures, and verifying changes rather than relying on AI-generated output without review.
