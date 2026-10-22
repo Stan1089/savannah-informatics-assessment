@@ -62,8 +62,31 @@ The app creates `clinic.db` and seeds five sample doctors on startup. Create a p
 
 Set `DATABASE_URL` to use a different database. For PostgreSQL, use a SQLAlchemy URL such as `postgresql+psycopg://user:password@host:5432/database`.
 
+
 ## Deployment and CI/CD
 
-The Render blueprint in `render.yaml` provisions the Docker web service and PostgreSQL database. The public application URL is assigned by Render after deployment; add it here before submission: **[deployment URL pending]**.
+### Live Deployment
 
-GitHub Actions runs the test suite on every pull request. Merges to `main` run the tests and then trigger Render deployment using the repository secret `RENDER_DEPLOY_HOOK_URL`. Create the Render service from the blueprint, create a deploy hook for it, then add that hook URL as a GitHub Actions secret. Do not commit the hook URL.
+The API is deployed on Render.
+
+- **Base URL:** https://savannah-informatics-assessment.onrender.com/
+- **Interactive API documentation:** https://savannah-informatics-assessment.onrender.com/docs
+- **Health check:** https://savannah-informatics-assessment.onrender.com/health
+
+The health endpoint returns `{"status":"ok"}` when the application is running.
+
+### Continuous Integration and Deployment
+
+The project uses GitHub Actions for automated testing and Render for deployment.
+
+- **Pull requests:** GitHub Actions installs dependencies and runs the automated test suite.
+- **Pushes to `main`:** GitHub Actions runs the tests before proceeding to the deployment job.
+- **Deployment:** If the tests pass, the workflow triggers a Render deployment using the `RENDER_DEPLOY_HOOK_URL` repository secret.
+- **Workflow configuration:** `.github/workflows/ci-cd.yml` (verify the exact filename in the repository).
+- **Test command:** `pytest -q`
+
+The Render deploy hook URL is stored as a GitHub Actions secret and is not committed to the repository.
+
+### Production Configuration
+
+The application uses PostgreSQL in production and SQLite for local development and tests. The `render.yaml` file defines the Render deployment configuration.
