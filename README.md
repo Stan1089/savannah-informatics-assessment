@@ -35,10 +35,10 @@ The API supports doctor discovery, patient registration, appointment booking, av
 - Book 30-minute appointments.
 - Prevent conflicting bookings for the same doctor and start time.
 - Cancel appointments while retaining cancellation history.
-- Reschedule appointments while preserving the existing booking if the new slot is invalid.
+- Reschedule appointments while preserving the original booking if the new slot is invalid.
 - Retrieve upcoming booked appointments for a patient.
 - Validate appointment timestamps and normalize them to UTC.
-- Automatically initialize the database and seed sample doctors.
+- Initialize the database and seed sample doctors on startup.
 - Provide interactive API documentation through Swagger UI.
 - Run automated tests through GitHub Actions.
 
@@ -69,8 +69,8 @@ The application separates HTTP request handling, business logic, database access
 - **API layer:** FastAPI exposes REST endpoints and handles request validation, dependency injection, and HTTP responses.
 - **Business logic:** The booking service validates appointment slots, working hours, booking cutoffs, and rescheduling rules.
 - **Data access:** SQLAlchemy manages database models, queries, and transactions.
-- **Database:** SQLite supports local development and testing. PostgreSQL is used in the production deployment.
-- **Testing:** Pytest runs automated tests against the application.
+- **Database:** SQLite supports local development and testing. PostgreSQL is used in production.
+- **Testing:** Pytest runs automated tests.
 - **Deployment:** Render hosts the API, while GitHub Actions automates testing and triggers deployment.
 
 ### Key Design Decisions
@@ -113,8 +113,6 @@ On application startup, the database tables are initialized and five sample doct
 
 ## API Endpoints
 
-The API exposes the following endpoints:
-
 | Method | Endpoint | Description |
 |---|---|---|
 | GET | `/health` | Check application health |
@@ -141,11 +139,11 @@ The application enforces the following business rules:
 7. A doctor cannot have two active appointments at the same start time.
 8. Patients cannot register multiple times with the same email address.
 9. Cancelled appointments retain their history and cancellation reason.
-10. Invalid booking and rescheduling requests are rejected without silently replacing an existing booking.
+10. Invalid booking and rescheduling requests are rejected without replacing an existing booking.
 
 ## Example Requests
 
-The following examples use the deployed API. You can also run them through Swagger UI at `/docs`.
+The following examples illustrate the API request formats. They can also be tested through Swagger UI at `/docs`.
 
 ### Check API health
 
@@ -176,7 +174,7 @@ POST /patients
 Content-Type: application/json
 ```
 
-Example request:
+Request body:
 
 ```json
 {
@@ -185,7 +183,7 @@ Example request:
 }
 ```
 
-A successful request returns the created patient record. The returned patient ID is used when booking an appointment.
+A successful request returns the created patient record. Use the returned patient ID when booking an appointment.
 
 ### Check appointment availability
 
@@ -193,7 +191,7 @@ A successful request returns the created patient record. The returned patient ID
 GET /doctors/1/availability?date=2027-01-04
 ```
 
-Returns the available appointment slots for doctor `1` on the requested date, subject to the doctor's working hours, existing bookings, and booking cutoff.
+Returns available appointment slots for doctor `1` on the requested date, subject to working hours, existing bookings, and the booking cutoff.
 
 ### Book an appointment
 
@@ -202,7 +200,7 @@ POST /appointments
 Content-Type: application/json
 ```
 
-Example request:
+Request body:
 
 ```json
 {
@@ -212,7 +210,7 @@ Example request:
 }
 ```
 
-Use valid doctor and patient IDs and a slot that satisfies the booking rules. The timestamp above uses the East Africa Time offset of `+03:00`.
+Use valid doctor and patient IDs and a slot that satisfies the booking rules. The example timestamp uses the East Africa Time offset of `+03:00`.
 
 ### Cancel an appointment
 
@@ -221,7 +219,7 @@ PATCH /appointments/1/cancel
 Content-Type: application/json
 ```
 
-Example request:
+Request body:
 
 ```json
 {
@@ -238,7 +236,7 @@ PATCH /appointments/1/reschedule
 Content-Type: application/json
 ```
 
-Example request:
+Request body:
 
 ```json
 {
@@ -256,7 +254,7 @@ GET /patients/1/appointments
 
 Returns the patient's upcoming appointments that remain booked.
 
-**Note:** The IDs and dates in these examples are illustrative. Use existing IDs and future dates appropriate to the API's booking rules when testing.
+**Note:** The IDs and dates in these examples are illustrative. Use existing IDs and dates appropriate to the API's booking rules when testing.
 
 ## Run Locally
 
@@ -267,8 +265,6 @@ Returns the patient's upcoming appointments that remain booked.
 - A terminal, such as the VS Code PowerShell terminal
 
 ### 1. Clone the repository
-
-Replace the repository URL below if you use a different clone URL.
 
 ```bash
 git clone https://github.com/Stan1089/savannah-informatics-assessment.git
@@ -284,7 +280,7 @@ py -3.12 -m venv .venv
 .venv\Scripts\Activate.ps1
 ```
 
-If PowerShell blocks virtual-environment activation, use the appropriate Python executable directly or follow your organization's PowerShell execution policy guidance.
+If PowerShell blocks virtual-environment activation, use the appropriate Python executable directly or follow your environment's PowerShell execution policy guidance.
 
 ### 3. Install dependencies
 
@@ -312,9 +308,9 @@ Press `Ctrl+C` in the terminal.
 
 ## Testing
 
-The project uses Pytest for automated testing.
+The project uses Pytest for automated testing. Tests are located in `tests/test_booking.py`.
 
-Install the project dependencies before running the tests, then execute:
+Run the test suite locally with:
 
 ```powershell
 python -m pytest -v
@@ -326,7 +322,7 @@ Alternatively, run:
 pytest -q
 ```
 
-The tests cover appointment booking behavior and relevant validation rules. The test suite has passed in the local development environment and through the configured GitHub Actions workflow.
+The test suite has passed locally and through the configured GitHub Actions workflow.
 
 ## Configuration
 
@@ -334,7 +330,7 @@ The application supports database configuration through the `DATABASE_URL` envir
 
 By default, local development uses SQLite.
 
-For PostgreSQL, configure a SQLAlchemy connection URL in the appropriate environment:
+For PostgreSQL, use a SQLAlchemy connection URL such as:
 
 ```text
 postgresql+psycopg://user:password@host:5432/database
@@ -354,7 +350,7 @@ The application is deployed on Render.
 
 The production environment uses PostgreSQL to avoid relying on an ephemeral local filesystem for persistent appointment data.
 
-Render provides the hosted application URL after the web service is deployed. The service may take a short time to start when using a free hosting instance.
+Render may take a short time to start the service after periods of inactivity, depending on the hosting plan.
 
 ## CI/CD Pipeline
 
@@ -362,13 +358,15 @@ The project uses GitHub Actions for continuous integration and continuous deploy
 
 ### Continuous Integration
 
+The workflow is defined in `.github/workflows/ci-cd.yml`.
+
 The workflow runs on pull requests and pushes to the `main` branch.
 
 The test job:
 
 1. Checks out the repository.
 2. Sets up Python 3.12.
-3. Installs the dependencies in `requirements.txt`.
+3. Installs dependencies from `requirements.txt`.
 4. Runs the automated test suite using `pytest -q`.
 
 ### Continuous Deployment
@@ -379,21 +377,15 @@ The workflow sends a deployment request to Render using the `RENDER_DEPLOY_HOOK_
 
 The deploy hook URL is stored as a secret and must not be committed to the repository.
 
-### Workflow Configuration
-
-The GitHub Actions workflow is located under `.github/workflows/`.
-
-Verify the exact workflow filename in the repository before documenting its full path. The current project configuration uses the workflow file that defines the test and deployment jobs.
-
 ### Deployment Verification
 
-After deployment, the following checks can be used to verify the service:
+After deployment, verify the service by:
 
-- Open the API homepage.
-- Open Swagger UI and inspect the available endpoints.
-- Check the `/health` endpoint.
-- Review the latest GitHub Actions run and confirm both the `test` and `deploy` jobs pass.
-- Review the Render deployment logs if the service does not respond as expected.
+- Opening the API homepage.
+- Opening Swagger UI and inspecting the available endpoints.
+- Checking the `/health` endpoint.
+- Confirming that the latest GitHub Actions run shows successful `test` and `deploy` jobs.
+- Reviewing Render deployment logs if the service does not respond as expected.
 
 ## Limitations and Trade-offs
 
